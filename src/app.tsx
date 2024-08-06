@@ -13,7 +13,6 @@
   5. Rendering
 */
 
-// 25:31
 import { useEffect, useState } from "react";
 
 type Piece = {
@@ -24,21 +23,39 @@ type Piece = {
 
 type Board = number[][];
 type Move = {
-  dx: number;
-  dy: number;
+  dx?: number;
+  dy?: number;
+  rotate?: boolean;
+  shape?: any;
 };
-type Place = { remove: Boolean; stick?: Boolean };
+type Place = { remove?: Boolean; stick?: Boolean };
 
 const BOARD_X = 10;
 const BOARD_Y = 20;
 
-const SHAPES = [[[1, 1, 1, 1]]];
+const SHAPES = [
+  [[1, 1, 1, 1]],
+  [
+    [1, 1],
+    [1, 1],
+  ],
+  [
+    [1, 1, 1],
+    [0, 1, 0],
+  ],
+];
+
+const INITIAL_PIECE: Piece = {
+  x: 0,
+  y: 0,
+  shape: SHAPES[0],
+};
 
 class Tetris {
   board: Board;
-  piece: Piece | null;
+  piece: Piece;
   constructor() {
-    this.piece = null;
+    this.piece = INITIAL_PIECE;
     this.board = Array(BOARD_Y)
       .fill("")
       .map(() => Array(BOARD_X).fill(0));
@@ -52,72 +69,88 @@ class Tetris {
       y: 0,
       shape,
     };
-    this.place({ remove: false });
+    this.place({});
   }
 
   place({ remove = false, stick = false }: Place) {
-    const piece = this.piece;
-    if (piece) {
-      const { shape } = piece;
+    if (this.piece) {
+      const { shape } = this.piece as Piece;
       for (let y = 0; y < shape.length; y++) {
         for (let x = 0; x < shape[0].length; x++) {
-          const newY = piece.y + y;
-          const newX = piece.x + x;
-          this.board[newY][newX] = remove ? 0 : stick ? 2 : shape[y][x];
+          if (shape[y][x]) {
+            const newY = this.piece.y + y;
+            const newX = this.piece.x + x;
+            this.board[newY][newX] = remove ? 0 : stick ? 2 : shape[y][x];
+          }
         }
       }
     }
   }
 
-  check({ dx, dy }: Move) {
-    const piece = this.piece;
-    if (piece) {
-      const { shape } = piece;
-      for (let y = 0; y < shape.length; y++) {
-        for (let x = 0; x < shape[0].length; x++) {
-          const newY = piece.y + y + dy;
-          const newX = piece.x + x + dx;
+  check({ dx = 0, dy = 0, shape = this.piece.shape }: Move) {
+    for (let y = 0; y < shape.length; y++) {
+      for (let x = 0; x < shape[0].length; x++) {
+        const newY = this.piece.y + y + dy;
+        const newX = this.piece.x + x + dx;
 
-          // checks left and right edges
-          if (newX < 0 || newX >= BOARD_X) {
-            return false;
-          }
-          // checks up and bottom edges
-          if (newY >= BOARD_Y) {
-            return false;
-          }
+        // checks left and right edges
+        if (newX < 0 || newX >= BOARD_X) {
+          return false;
         }
-        return true;
+        // checks up and bottom edges
+        if (newY >= BOARD_Y) {
+          return false;
+        }
+        // checks colission with other pieces
+        if (this.board[newY][newX] === 2) return false;
       }
     }
+    return true;
   }
 
-  move({ dx, dy }: Move) {
-    /**
-     * check if can move
-     * if invalid x -> do nothing
-     * if invalid y -> stick piece and generate new piece
-     * if valid
-     *  remove piece
-     *  add to new place
-     *
-     */
-    const valid = this.check({ dx, dy });
+  // When pieces connect, clear bottom pieces, the lines
+  clearLines() {
+    this.board.forEach((row, i) => {
+      if (row.every((cell) => cell === 2)) {
+        this.board.splice(i, 1);
+        this.board.unshift(Array(BOARD_X).fill(0));
+      }
+    });
+  }
+
+  rotateShape() {
+    const { shape } = this.piece;
+    const rotateShape = Array(shape[0].length)
+      .fill("")
+      .map(() => Array(shape.length).fill(0));
+    for (let y = 0; y < shape.length; y++) {
+      for (let x = 0; x < shape[0].length; x++) {
+        if (shape[y][x]) {
+          rotateShape[x][shape[0].length - y - 1] = shape[y][x];
+        }
+      }
+    }
+    return rotateShape;
+  }
+
+  move({ dx = 0, dy = 0, rotate = false }: Move) {
+    const shape = rotate ? this.rotateShape() : this.piece.shape;
+    const valid = this.check({ dx, dy, shape });
 
     if (!valid && dy) {
-      this.place({ stick: true, remove: false });
+      this.place({ stick: true });
+      this.clearLines();
       this.generatePiece();
       return;
     }
+
     if (!valid) return;
 
     this.place({ remove: true });
-    console.log({ dx, dy, piece: this.piece });
-    if (this.piece) {
-      this.piece.x += dx;
-      this.piece.y += dy;
-      this.place({ remove: false });
-    }
+    this.piece.x += dx;
+    this.piece.y += dy;
+    this.piece.shape = shape;
+    this.place({});
   }
 }
 
@@ -127,18 +160,17 @@ export default function App() {
   const [_, render] = useState({});
   useEffect(() => {
     const keyDownHandler = (e: KeyboardEvent) => {
-      console.log("key", e);
       if (e.key === "ArrowDown") {
-        tetris.move({ dy: 1, dx: 0 });
+        tetris.move({ dy: 1 });
       }
       if (e.key === "ArrowRight") {
-        tetris.move({ dy: 0, dx: 1 });
+        tetris.move({ dx: 1 });
       }
       if (e.key === "ArrowUp") {
-        tetris.move({ dy: -1, dx: 0 });
+        tetris.move({ rotate: true });
       }
       if (e.key === "ArrowLeft") {
-        tetris.move({ dy: 0, dx: -1 });
+        tetris.move({ dx: -1 });
       }
       // This is a hack to force render
       render({});
